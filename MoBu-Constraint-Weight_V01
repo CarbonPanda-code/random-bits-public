@@ -1,0 +1,549 @@
+import pyfbsdk as fb
+import pyfbsdk_additions as fba
+from random import *
+
+lSystem = fb.FBSystem()
+
+##Get Current Frame
+def GetCurrentFrame():
+    return fb.FBSystem().LocalTime.GetFrame()
+
+##Goto User Specified Frame ie. GotoFrame(15) Will Place The Time Slider/Play Head On Frame 15
+def GotoFrame(frame):
+    t = fb.FBTime(0, 0, 0, frame, 0)
+    fb.FBPlayerControl().Goto(t)
+
+##Returns A List Of All Selected Models
+def GetSelModels():
+    lSelModels = []
+    modelList = fb.FBModelList ()
+    fb.FBGetSelectedModels (modelList, None, True)
+    for model in modelList:
+        if model.Selected == True:
+            lSelModels.extend([model])
+        else:
+            pass
+    if len(lSelModels) != 1:
+        fb.FBMessageBox( "Object Select Error", "Please Pick 1 Object", "OK" )
+        pass
+    else:
+        return lSelModels
+
+##Clear Selection Of All Models
+def ClearSelected():
+    modelList = fb.FBModelList()
+    fb.FBGetSelectedModels ( modelList, None, True )
+    for model in modelList:
+        model.Selected = False
+
+##Get Model By Long Name ie. GetModel('Character_01:Ctrl:HipsEffector') Will Return The HipEffector Of The Character Within Your Scene That Has The NameSpace "Character_01" 
+def GetModel(longname):
+    lModel = fb.FBFindModelByLabelName(longname) 
+    return lModel
+
+def CreateParentConstraint(parent, child, offset, start, end, weight, blend): 
+    ##Get Object By Name
+    def GetObjectByName(name):
+        lModel = fb.FBFindModelByLabelName(name) 
+        return lModel
+     
+    ##Set Parent Object    
+    objParent = parent
+    
+    ##Set Child Object
+    objChild = child
+     
+    ##Create "Parent/Child" Constraint 
+    lMyConstraint = fb.FBConstraintManager().TypeCreateConstraint('Parent/Child')
+         
+    #for index, element in enumerate(selected_objects):
+    lMyConstraint.ReferenceAdd (0, objChild)
+    lMyConstraint.ReferenceAdd (1, objParent)
+     
+    #Snap if user desires
+    if offset == True:
+        lMyConstraint.Snap()
+     
+    #weight of the constraint
+    lMyConstraint.Weight = weight
+     
+    ##Activate Constraint
+    lMyConstraint.Active = True
+        
+    takeName = lSystem.CurrentTake.LongName
+    
+    lMyConstraint.Name = takeName + ":" + objChild.LongName + "_To_" + objParent.LongName + "1"
+    
+    f = GetCurrentFrame()
+    
+    cWeight = lMyConstraint.PropertyList.Find('Weight')
+
+    GotoFrame(start - blend)    #goto start of blend range and set zero key
+    
+    cWeight.Data = 0
+    cWeight.Key()
+    
+    GotoFrame(start)            #goto start range for constraint
+    
+    cWeight.Data = 100
+    cWeight.Key()
+    
+    GotoFrame(end)              #goto end range for constraint
+    
+    cWeight.Data = 100 
+    cWeight.Key()
+
+    
+    GotoFrame(end + blend)      #goto end of constraint and blend range
+    cWeight.Data = 0
+    cWeight.Key()
+    
+    GotoFrame(f)
+    
+    #lMyConstraint.Selected = True
+
+##Animated Align: "obj" = Object You Want To Align, "source" = Object You Want To Align To, "start" = Frame You Wish To Start On And "end" = The Frame You Wish To Stop At
+def AnimatedAlign(obj, source, start, end):
+    orgFrame = GetCurrentFrame()
+    GotoFrame(start)
+    ##Create a loop for our time range
+    for t in range (start, (end+1)):
+        f = GetCurrentFrame()
+        ##Get Our Source's Translation And Rotation
+        sourceTrans = fb.FBVector3d()
+        sourceRot = fb.FBVector3d()
+        source.GetVector (sourceTrans, fb.FBModelTransformationType.kModelTransformation, False)
+        source.GetVector (sourceRot, fb.FBModelTransformationType.kModelRotation, False)
+        ##Match Our Object's Translation And Rotation To Match That Of Our Source
+        obj.Translation = sourceTrans
+        obj.Translation.Key()
+        obj.Rotation = sourceRot
+        obj.Rotation.Key()
+        ##Goto Next Frame
+        GotoFrame( (t+1) )
+        ##Clean Up
+        del f, sourceTrans, sourceRot
+    ##Go Back To The Original Frame That The User Was On When They Ran The Script - This Creates A Better User Experience    
+    GotoFrame(orgFrame)
+
+##UI Get Target Object Button Function    
+def bGetTargetCallBack(control, event):
+    targetObj = GetSelModels()
+    if targetObj == None:
+        pass
+    else:
+        eTarget.Text = targetObj[0].LongName
+
+##UI Get Source Object Button Function 
+def bGetSourceCallBack(control, event):
+    targetObj = GetSelModels()
+    if targetObj == None:
+        pass
+    else:
+        eSource.Text = targetObj[0].LongName
+
+##UI Get Start Frame Button Function 
+def bGetStartCallBack(control, event):
+    startFrame = GetCurrentFrame()
+    eStart.Text = str(startFrame)
+
+##UI Get End Frame Button Function 
+def bGetEndCallBack(control, event):
+    endFrame = GetCurrentFrame()
+    eEnd.Text = str(endFrame)
+    
+def bGetBlendCallBack(control, event):
+    blendTime = 5
+    eBlend.Text = str(blendTime)
+
+##UI Add A Marker Button Function     
+def AddMarkerCallBack(control, event):
+    ClearSelected()   
+    lR = random()
+    lG = random()
+    lB = random() 
+    lHelper = fb.FBModelMarker(eMarker.Text)
+    lHelper.Show = True
+    lHelper.Size = 1000
+    lHelper.PropertyList.Find('LookUi').Data = 2
+    lHelper.Color = fb.FBColor(lR,lG,lB)
+    lHelper.Selected = True
+
+##UI Execute Animated Align Button Function 
+def bExecuteCallBack(control, event):
+    obj = GetModel(eTarget.Text)
+    source = GetModel(eSource.Text)
+    start = int(eStart.Text)
+    end = int(eEnd.Text)
+    blend = int(eBlend.Text)
+    
+    if start >= end:
+        fb.FBMessageBox( "Frame Input Error", "Start Frame Can Not Be Less Than End Frame", "OK" )
+        pass
+    if obj == source:
+        fb.FBMessageBox( "Object Input Error", "Source Object And Target Object Can Not Be The Same Objects", "OK" )
+        pass
+    if start <= end:
+        #AnimatedAlign(obj, source, start, end)
+        CreateParentConstraint(source, obj, True, start, end, 100, blend)
+        print obj
+        print source
+    else:
+        fb.FBMessageBox("Error", "Failed to Create Constraint", "OK")
+        
+    fb.FBSystem().Scene.Evaluate() 
+
+##UI Button Variables
+lTarget = fb.FBLabel()
+eTarget = fb.FBEdit()
+bGetTarget = fb.FBButton()
+lSource = fb.FBLabel()
+eSource = fb.FBEdit()
+bGetSource = fb.FBButton()
+lStart = fb.FBLabel()
+eStart = fb.FBEdit()
+bGetStart = fb.FBButton()
+lEnd = fb.FBLabel()
+eEnd = fb.FBEdit()
+bGetEnd = fb.FBButton()
+hMarTitle = fb.FBLabel()
+hMarker = fb.FBLabel()
+eMarker = fb.FBEdit()
+bMarker = fb.FBButton()
+bExecute = fb.FBButton()
+
+lBlend = fb.FBLabel()
+eBlend = fb.FBEdit()
+bGetBlend = fb.FBButton()
+
+
+##Create UI Layout
+def PopulateTool(t):
+    #populate regions here
+
+    x = fb.FBAddRegionParam(25,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(15,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(270,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(20,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("lTarget","lTarget", x, y, w, h)
+
+    t.SetControl("lTarget", lTarget)
+    lTarget.Visible = True
+    lTarget.ReadOnly = False
+    lTarget.Enabled = True
+    lTarget.Hint = ""
+    lTarget.Caption = "Target Object:"
+    lTarget.Style = fb.FBTextStyle.kFBTextStyleNone
+    lTarget.Justify = fb.FBTextJustify.kFBTextJustifyLeft
+    lTarget.WordWrap = True
+    
+    x = fb.FBAddRegionParam(25,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(35,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(270,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(35,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("eTarget","eTarget", x, y, w, h)
+
+    t.SetControl("eTarget", eTarget)
+    eTarget.Visible = True
+    eTarget.ReadOnly = False
+    eTarget.Enabled = True
+    eTarget.Hint = ""
+    eTarget.Text = ""
+    eTarget.PasswordMode = False
+    
+    x = fb.FBAddRegionParam(305,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(40,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(30,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(30,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("bGetTarget","bGetTarget", x, y, w, h)
+
+    t.SetControl("bGetTarget", bGetTarget)
+    bGetTarget.Visible = True
+    bGetTarget.ReadOnly = False
+    bGetTarget.Enabled = True
+    bGetTarget.Hint = ""
+    bGetTarget.Caption = "{]"
+    bGetTarget.State = 0
+    bGetTarget.Style = fb.FBButtonStyle.kFBPushButton
+    bGetTarget.Justify = fb.FBTextJustify.kFBTextJustifyCenter
+    bGetTarget.Look = fb.FBButtonLook.kFBLookNormal
+    bGetTarget.OnClick.Add(bGetTargetCallBack)
+    
+    x = fb.FBAddRegionParam(25,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(85,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(270,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(20,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("lSource","lSource", x, y, w, h)
+
+    t.SetControl("lSource", lSource)
+    lSource.Visible = True
+    lSource.ReadOnly = False
+    lSource.Enabled = True
+    lSource.Hint = ""
+    lSource.Caption = "Source Object:"
+    lSource.Style = fb.FBTextStyle.kFBTextStyleNone
+    lSource.Justify = fb.FBTextJustify.kFBTextJustifyLeft
+    lSource.WordWrap = True
+    
+    x = fb.FBAddRegionParam(25,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(105,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(270,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(35,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("eSource","eSource", x, y, w, h)
+
+    t.SetControl("eSource", eSource)
+    eSource.Visible = True
+    eSource.ReadOnly = False
+    eSource.Enabled = True
+    eSource.Hint = ""
+    eSource.Text = ""
+    eSource.PasswordMode = False
+    
+    x = fb.FBAddRegionParam(305,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(110,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(30,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(30,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("bGetSource","bGetSource", x, y, w, h)
+
+    t.SetControl("bGetSource", bGetSource)
+    bGetSource.Visible = True
+    bGetSource.ReadOnly = False
+    bGetSource.Enabled = True
+    bGetSource.Hint = ""
+    bGetSource.Caption = "{]"
+    bGetSource.State = 0
+    bGetSource.Style = fb.FBButtonStyle.kFBPushButton
+    bGetSource.Justify = fb.FBTextJustify.kFBTextJustifyCenter
+    bGetSource.Look = fb.FBButtonLook.kFBLookNormal
+    bGetSource.OnClick.Add(bGetSourceCallBack)
+    
+    x = fb.FBAddRegionParam(25,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(160,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(65,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(20,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("lStart","lStart", x, y, w, h)
+
+    t.SetControl("lStart", lStart)
+    lStart.Visible = True
+    lStart.ReadOnly = False
+    lStart.Enabled = True
+    lStart.Hint = ""
+    lStart.Caption = "Start Frame:"
+    lStart.Style = fb.FBTextStyle.kFBTextStyleNone
+    lStart.Justify = fb.FBTextJustify.kFBTextJustifyLeft
+    lStart.WordWrap = True
+    
+    x = fb.FBAddRegionParam(25,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(180,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(60,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(35,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("eStart","eStart", x, y, w, h)
+
+    t.SetControl("eStart", eStart)
+    eStart.Visible = True
+    eStart.ReadOnly = False
+    eStart.Enabled = True
+    eStart.Hint = ""
+    eStart.Text = ""
+    eStart.PasswordMode = False
+    
+    x = fb.FBAddRegionParam(95,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(185,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(30,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(30,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("bGetStart","bGetStart", x, y, w, h)
+
+    t.SetControl("bGetStart", bGetStart)
+    bGetStart.Visible = True
+    bGetStart.ReadOnly = False
+    bGetStart.Enabled = True
+    bGetStart.Hint = ""
+    bGetStart.Caption = "{]"
+    bGetStart.State = 0
+    bGetStart.Style = fb.FBButtonStyle.kFBPushButton
+    bGetStart.Justify = fb.FBTextJustify.kFBTextJustifyCenter
+    bGetStart.Look = fb.FBButtonLook.kFBLookNormal
+    bGetStart.OnClick.Add(bGetStartCallBack)
+    
+    x = fb.FBAddRegionParam(235,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(160,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(60,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(20,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("lEnd","lEnd", x, y, w, h)
+
+    t.SetControl("lEnd", lEnd)
+    lEnd.Visible = True
+    lEnd.ReadOnly = False
+    lEnd.Enabled = True
+    lEnd.Hint = ""
+    lEnd.Caption = "End Frame:"
+    lEnd.Style = fb.FBTextStyle.kFBTextStyleNone
+    lEnd.Justify = fb.FBTextJustify.kFBTextJustifyLeft
+    lEnd.WordWrap = True
+    
+    x = fb.FBAddRegionParam(235,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(180,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(60,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(35,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("eEnd","eEnd", x, y, w, h)
+
+    t.SetControl("eEnd", eEnd)
+    eEnd.Visible = True
+    eEnd.ReadOnly = False
+    eEnd.Enabled = True
+    eEnd.Hint = ""
+    eEnd.Text = ""
+    eEnd.PasswordMode = False
+    
+    x = fb.FBAddRegionParam(305,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(185,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(30,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(30,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("bGetEnd","bGetEnd", x, y, w, h)
+
+    t.SetControl("bGetEnd", bGetEnd)
+    bGetEnd.Visible = True
+    bGetEnd.ReadOnly = False
+    bGetEnd.Enabled = True
+    bGetEnd.Hint = ""
+    bGetEnd.Caption = "{]"
+    bGetEnd.State = 0
+    bGetEnd.Style = fb.FBButtonStyle.kFBPushButton
+    bGetEnd.Justify = fb.FBTextJustify.kFBTextJustifyCenter
+    bGetEnd.Look = fb.FBButtonLook.kFBLookNormal
+    bGetEnd.OnClick.Add(bGetEndCallBack)
+    
+    x = fb.FBAddRegionParam(0,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(235,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(400,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(15,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("hMarTitle","hMarTitle", x, y, w, h)
+
+    t.SetControl("hMarTitle", hMarTitle)
+    hMarTitle.Visible = True
+    hMarTitle.ReadOnly = False
+    hMarTitle.Enabled = True
+    hMarTitle.Hint = ""
+    hMarTitle.Caption = "Create A Marker"
+    hMarTitle.Style = fb.FBTextStyle.kFBTextStyleNone
+    hMarTitle.Justify = fb.FBTextJustify.kFBTextJustifyCenter
+    hMarTitle.WordWrap = False
+
+    x = fb.FBAddRegionParam(10,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(260,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(180,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(15,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("hMarker","hMarker", x, y, w, h)
+
+    t.SetControl("hMarker", hMarker)
+    hMarker.Visible = True
+    hMarker.ReadOnly = False
+    hMarker.Enabled = True
+    hMarker.Hint = ""
+    hMarker.Caption = "Marker Name:"
+    hMarker.Style = fb.FBTextStyle.kFBTextStyleNone
+    hMarker.Justify = fb.FBTextJustify.kFBTextJustifyLeft
+    hMarker.WordWrap = True
+    
+    x = fb.FBAddRegionParam(90,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(255,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(200,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(20,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("eMarker","eMarker", x, y, w, h)
+
+    t.SetControl("eMarker", eMarker)
+    eMarker.Visible = True
+    eMarker.ReadOnly = False
+    eMarker.Enabled = True
+    eMarker.Hint = ""
+    eMarker.Text = "Marker"
+    eMarker.Style = fb.FBTextStyle.kFBTextStyleNone
+    eMarker.Justify = fb.FBTextJustify.kFBTextJustifyLeft
+    eMarker.WordWrap = True
+    
+    x = fb.FBAddRegionParam(300,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(255,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(20,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(20,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("bMarker","bMarker", x, y, w, h)
+
+    t.SetControl("bMarker", bMarker)
+    bMarker.Visible = True
+    bMarker.ReadOnly = False
+    bMarker.Enabled = True
+    bMarker.Hint = ""
+    bMarker.Caption = "+"
+    bMarker.State = 0
+    bMarker.Style = fb.FBButtonStyle.kFBPushButton
+    bMarker.Justify = fb.FBTextJustify.kFBTextJustifyCenter
+    bMarker.Look = fb.FBButtonLook.kFBLookNormal
+    bMarker.OnClick.Add(AddMarkerCallBack)
+    
+    x = fb.FBAddRegionParam(85,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(300,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(210,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(55,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("bExecute","bExecute", x, y, w, h)
+
+    t.SetControl("bExecute", bExecute)
+    bExecute.Visible = True
+    bExecute.ReadOnly = False
+    bExecute.Enabled = True
+    bExecute.Hint = ""
+    bExecute.Caption = "Execute"
+    bExecute.State = 0
+    bExecute.Style = fb.FBButtonStyle.kFBPushButton
+    bExecute.Justify = fb.FBTextJustify.kFBTextJustifyCenter
+    bExecute.Look = fb.FBButtonLook.kFBLookNormal
+    bExecute.OnClick.Add(bExecuteCallBack)
+    
+    
+    #NEW ADDITIONS
+    
+    #Blend Button Label
+    x = fb.FBAddRegionParam(25,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(380,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(60,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(20,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("lBlend","lBlend", x, y, w, h)
+
+    t.SetControl("lBlend", lBlend)
+    lBlend.Visible = True
+    lBlend.ReadOnly = False
+    lBlend.Enabled = True
+    lBlend.Hint = ""
+    lBlend.Caption = "Blend Time:"
+    lBlend.Style = fb.FBTextStyle.kFBTextStyleNone
+    lBlend.Justify = fb.FBTextJustify.kFBTextJustifyLeft
+    lBlend.WordWrap = True
+    
+    #Blend Field 
+    x = fb.FBAddRegionParam(25,fb.FBAttachType.kFBAttachNone,"")
+    y = fb.FBAddRegionParam(400,fb.FBAttachType.kFBAttachNone,"")
+    w = fb.FBAddRegionParam(75,fb.FBAttachType.kFBAttachNone,"")
+    h = fb.FBAddRegionParam(30,fb.FBAttachType.kFBAttachNone,"")
+    t.AddRegion("eBlend","eBlend", x, y, w, h)
+
+    t.SetControl("eBlend", eBlend)
+    eBlend.Visible = True
+    eBlend.ReadOnly = False
+    eBlend.Enabled = True
+    eBlend.Hint = "25"
+    eBlend.Caption = "Blend Length"
+    eBlend.Text = "5"
+    eBlend.State = 0
+    eBlend.Style = fb.FBButtonStyle.kFBPushButton
+    eBlend.Justify = fb.FBTextJustify.kFBTextJustifyCenter
+    eBlend.Look = fb.FBButtonLook.kFBLookNormal
+    #eBlend.OnClick.Add(bGetBlendCallBack)
+    
+    
+
+##Creat Tool Window    
+def CreateTool():
+    t = fba.FBCreateUniqueTool("Constraints with Weights v1.0")
+    t.StartSizeX = 400
+    t.StartSizeY = 500
+    PopulateTool(t)
+    fb.ShowTool(t)
+CreateTool()
